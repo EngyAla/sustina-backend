@@ -5,6 +5,9 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SectorsModule } from './sectors/sectors.module.js';
+import { OrganizationsModule } from './organizations/organizations.module.js';
+import { DocumentsModule } from './documents/documents.module.js';
+import { RegistrationModule } from './registration/registration.module.js';
 
 
 @Module({
@@ -14,6 +17,9 @@ import { SectorsModule } from './sectors/sectors.module.js';
     }),
     PrismaModule,
     SectorsModule,
+    OrganizationsModule,
+    DocumentsModule,
+    RegistrationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

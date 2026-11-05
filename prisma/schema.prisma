@@ -19,7 +19,30 @@ enum OrganizationStatus {
   SUSPENDED
 }
 
+enum UserRole {
+  SUPER_ADMIN
+  ORG_ADMIN
+  ORG_MEMBER
+}
 
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum RegistrationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocumentScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  FAILED
+}
 
 model Sector {
   id          String  @id @default(uuid())
@@ -89,9 +112,113 @@ model Organization {
   subIndustryId String
   subIndustry   SubIndustry @relation(fields: [subIndustryId], references: [id], onDelete: Restrict)
 
+  users                User[]
+  registrationRequests RegistrationRequest[]
+  documents            OrganizationDocument[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([subIndustryId])
   @@index([status])
+}
+
+// ==========================================
+// USERS
+// ==========================================
+
+model User {
+  id String @id @default(uuid())
+
+  firstName    String?
+  lastName     String?
+  email        String  @unique
+  passwordHash String
+
+  role   UserRole   @default(ORG_MEMBER)
+  status UserStatus @default(PENDING)
+
+  // Null is allowed for SUPER_ADMIN accounts only.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  submittedRegistrationRequests RegistrationRequest[] @relation("RegistrationSubmitter")
+  reviewedRegistrationRequests  RegistrationRequest[] @relation("RegistrationReviewer")
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([role])
+  @@index([status])
+}
+
+// ==========================================
+// REGISTRATION REQUESTS
+// ==========================================
+
+model RegistrationRequest {
+  id            String @id @default(uuid())
+  referenceCode String @unique
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  submittedById String
+  submittedBy   User   @relation("RegistrationSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+
+  reviewedById String?
+  reviewedBy   User?   @relation("RegistrationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  status          RegistrationRequestStatus @default(PENDING)
+  rejectionReason String?
+
+  termsAcceptedAt     DateTime
+  authorityAttestedAt DateTime
+
+  submittedAt DateTime  @default(now())
+  reviewedAt  DateTime?
+
+  documents OrganizationDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([submittedById])
+  @@index([reviewedById])
+  @@index([status, submittedAt])
+}
+
+// ==========================================
+// ORGANIZATION DOCUMENTS
+// ==========================================
+
+model OrganizationDocument {
+  id String @id @default(uuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  registrationRequestId String
+  registrationRequest   RegistrationRequest @relation(fields: [registrationRequestId], references: [id], onDelete: Restrict)
+
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+
+  cloudinaryPublicId String @unique
+  secureUrl          String
+
+  sha256     String
+  scanStatus DocumentScanStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([registrationRequestId])
+  @@index([sha256])
+  @@index([scanStatus])
 }
