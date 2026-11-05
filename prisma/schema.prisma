@@ -11,3 +11,87 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum OrganizationStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+
+
+model Sector {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  industries Industry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+model Industry {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  sectorId String
+  sector   Sector @relation(fields: [sectorId], references: [id], onDelete: Restrict)
+
+  subIndustries SubIndustry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sectorId, name])
+  @@index([sectorId, isActive, sortOrder])
+}
+
+model SubIndustry {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  industryId String
+  industry   Industry @relation(fields: [industryId], references: [id], onDelete: Restrict)
+
+  organizations Organization[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([industryId, name])
+  @@index([industryId, isActive, sortOrder])
+}
+
+// ==========================================
+// ORGANIZATIONS
+// ==========================================
+
+model Organization {
+  id                 String @id @default(uuid())
+  legalName          String
+  hqCountry          String
+  firstReportingYear Int
+
+  status OrganizationStatus @default(PENDING)
+
+  subIndustryId String
+  subIndustry   SubIndustry @relation(fields: [subIndustryId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subIndustryId])
+  @@index([status])
+}
