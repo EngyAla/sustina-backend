@@ -4,6 +4,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { Pool } from "pg";
 
+import bcrypt from "bcrypt";
+
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
@@ -66,7 +68,50 @@ const taxonomy = [
     },
     ];
 
-    async function main() {
+
+async function seedSuperAdmin() {
+    const email = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+    const password = process.env.SUPER_ADMIN_PASSWORD;
+
+    if (!email || !password) {
+        throw new Error(
+            "SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD must be defined in .env",
+        );
+    }
+
+    // Check if the email already exists
+    const existingUser = await prisma.user.findUnique({
+        where: { email },
+    });
+
+    if (existingUser) {
+        if (existingUser.role !== "SUPER_ADMIN") {
+            throw new Error(
+                "The configured Super Admin email already belongs to another user.",
+            );
+        }
+
+        console.log("Super Admin already exists. Skipping creation.");
+        return;
+    }
+
+    // Hash the password before saving it
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await prisma.user.create({
+        data: {
+            email,
+            passwordHash,
+            role: "SUPER_ADMIN",
+            status: "ACTIVE",
+            organizationId: null,
+        },
+    });
+
+    console.log("Super Admin created successfully.");
+}
+
+async function main() {
     for (const [sectorIndex, sectorData] of taxonomy.entries()) {
         const sector = await prisma.sector.upsert({
         where: {
@@ -127,6 +172,9 @@ const taxonomy = [
         }
     }
     console.log("Taxonomy seed completed successfully.");
+
+    await seedSuperAdmin();
+    console.log("Database seeding completed successfully.");
 }
 
 main()

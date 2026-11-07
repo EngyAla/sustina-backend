@@ -1,0 +1,12 @@
+services:
+  clamav:
+    image: clamav/clamav:stable
+    container_name: sustina-clamav
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamav_database:/var/lib/clamav
+
+volumes:
+  clamav_database:

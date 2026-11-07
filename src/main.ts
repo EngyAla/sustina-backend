@@ -2,7 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import helmet from 'helmet';
-
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -10,6 +10,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   app.use(helmet());
+  app.use(cookieParser());
 
   app.setGlobalPrefix('api');
 

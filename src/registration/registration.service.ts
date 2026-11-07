@@ -144,7 +144,7 @@ export class RegistrationService {
                 uploadedDocument.cloudinaryPublicId,
                 secureUrl: uploadedDocument.secureUrl,
                 sha256: uploadedDocument.sha256,
-                scanStatus: 'PENDING',
+                scanStatus: uploadedDocument.scanStatus,
             },
             select: {
                 id: true,

@@ -8,6 +8,9 @@ import { SectorsModule } from './sectors/sectors.module.js';
 import { OrganizationsModule } from './organizations/organizations.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { RegistrationModule } from './registration/registration.module.js';
+import { AuthModule } from './auth/auth.module.js';
+import { AdminModule } from './admin/admin.module.js';
+import { MalwareScannerModule } from './malware-scanner/malware-scanner.module.js';
 
 
 @Module({
@@ -20,6 +23,9 @@ import { RegistrationModule } from './registration/registration.module.js';
     OrganizationsModule,
     DocumentsModule,
     RegistrationModule,
+    AuthModule,
+    AdminModule,
+    MalwareScannerModule,
   ],
   controllers: [AppController],
   providers: [AppService],
