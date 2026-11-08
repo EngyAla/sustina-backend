@@ -10,6 +10,7 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts", // ده بيقول لـ Prisma إن أمر npx prisma db seed يشغّل الملف prisma/seed.ts
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_URL"],
   },
 });
