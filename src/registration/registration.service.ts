@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { DocumentsService } from '../documents/documents.service.js';
 
 import { RegisterOrganizationDto } from './dto/register-organization.dto.js';
+import { DEFAULT_DEPARTMENTS } from '../departments/default-departments.js';
 
 @Injectable()
 export class RegistrationService {
@@ -83,36 +84,36 @@ export class RegistrationService {
         // 7. Create all database records in one transaction
         const result = await this.prisma.$transaction(async (tx) => {
             const organization = await tx.organization.create({
-            data: {
-                legalName: dto.legalName,
-                hqCountry: dto.hqCountry,
-                firstReportingYear: dto.firstReportingYear,
-                subIndustryId: dto.subIndustryId,
-                status: 'PENDING',
-            },
-            select: {
-                id: true,
-                legalName: true,
-                status: true,
-                hqCountry: true,
-                firstReportingYear: true,
-            },
+                data: {
+                    legalName: dto.legalName,
+                    hqCountry: dto.hqCountry,
+                    firstReportingYear: dto.firstReportingYear,
+                    subIndustryId: dto.subIndustryId,
+                    status: 'PENDING',
+                },
+                select: {
+                    id: true,
+                    legalName: true,
+                    status: true,
+                    hqCountry: true,
+                    firstReportingYear: true,
+                },
             });
 
             const user = await tx.user.create({
-            data: {
-                email: dto.email,
-                passwordHash,
-                role: 'ORG_ADMIN',
-                status: 'PENDING',
-                organizationId: organization.id,
-            },
-            select: {
-                id: true,
-                email: true,
-                role: true,
-                status: true,
-            },
+                data: {
+                    email: dto.email,
+                    passwordHash,
+                    role: 'ORG_ADMIN',
+                    status: 'PENDING',
+                    organizationId: organization.id,
+                },
+                select: {
+                    id: true,
+                    email: true,
+                    role: true,
+                    status: true,
+                },
             });
 
             const registrationRequest =
@@ -134,24 +135,31 @@ export class RegistrationService {
             });
 
             const document = await tx.organizationDocument.create({
-            data: {
-                organizationId: organization.id,
-                registrationRequestId: registrationRequest.id,
-                originalFileName: uploadedDocument.originalFileName,
-                mimeType: uploadedDocument.mimeType,
-                sizeBytes: uploadedDocument.sizeBytes,
-                cloudinaryPublicId:
-                uploadedDocument.cloudinaryPublicId,
-                secureUrl: uploadedDocument.secureUrl,
-                sha256: uploadedDocument.sha256,
-                scanStatus: uploadedDocument.scanStatus,
-            },
-            select: {
-                id: true,
-                originalFileName: true,
-                sha256: true,
-                scanStatus: true,
-            },
+                data: {
+                    organizationId: organization.id,
+                    registrationRequestId: registrationRequest.id,
+                    originalFileName: uploadedDocument.originalFileName,
+                    mimeType: uploadedDocument.mimeType,
+                    sizeBytes: uploadedDocument.sizeBytes,
+                    cloudinaryPublicId:
+                    uploadedDocument.cloudinaryPublicId,
+                    secureUrl: uploadedDocument.secureUrl,
+                    sha256: uploadedDocument.sha256,
+                    scanStatus: uploadedDocument.scanStatus,
+                },
+                select: {
+                    id: true,
+                    originalFileName: true,
+                    sha256: true,
+                    scanStatus: true,
+                },
+            });
+            await tx.department.createMany({
+                data: DEFAULT_DEPARTMENTS.map((name, index) => ({
+                    name,
+                    organizationId: organization.id,
+                    sortOrder: index + 1,
+                })),
             });
 
             return {
@@ -161,6 +169,7 @@ export class RegistrationService {
             document,
             };
         });
+        
 
         // 8. Return safe registration information
         return {

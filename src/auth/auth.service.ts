@@ -124,11 +124,16 @@ export class AuthService {
         });
 
         // 2. Reject if user does not exist
-        if (!user) {
+        if (!user || user.deletedAt) {
             throw new UnauthorizedException('Invalid email or password');
         }
 
         // 3. Compare entered password with stored hash
+        if (!user.passwordHash) {
+            throw new UnauthorizedException(
+                'Please complete your account setup before logging in',
+            );
+        }
         const isPasswordValid = await bcrypt.compare(
             dto.password,
             user.passwordHash,
@@ -160,6 +165,12 @@ export class AuthService {
                 'User is not associated with an organization',
                 );
             }
+        }
+
+        if (user.deletedAt) {
+            throw new UnauthorizedException(
+                'Invalid email or password',
+            );
         }
 
         // 6. Generate access and refresh token
@@ -247,6 +258,12 @@ export class AuthService {
             ) {
                 throw new UnauthorizedException('Organization is not active');
             }
+        }
+
+        if (user.deletedAt) {
+            throw new UnauthorizedException(
+                'User account is not available',
+            );
         }
 
         const newRefreshToken = this.createRefreshToken();

@@ -5,6 +5,7 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 import { Pool } from "pg";
 
 import bcrypt from "bcrypt";
+import { DEFAULT_DEPARTMENTS } from "../src/departments/default-departments.js";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -178,7 +179,6 @@ const taxonomy = [
     },
 ];
 
-
 async function seedSuperAdmin() {
     const email = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
     const password = process.env.SUPER_ADMIN_PASSWORD;
@@ -219,6 +219,32 @@ async function seedSuperAdmin() {
     });
 
     console.log("Super Admin created successfully.");
+}
+
+async function seedDefaultDepartmentsForOrganizations() {
+    const organizations = await prisma.organization.findMany({
+        select: {
+        id: true,
+        legalName: true,
+        },
+    });
+
+    for (const organization of organizations) {
+        await prisma.department.createMany({
+            data: DEFAULT_DEPARTMENTS.map((name, index) => ({
+                name,
+                organizationId: organization.id,
+                sortOrder: index + 1,
+            })),
+            skipDuplicates: true,
+        });
+
+        console.log(
+            `Default departments seeded for: ${organization.legalName}`,
+        );
+    }
+
+    console.log('Default departments seeding completed successfully.');
 }
 
 async function main() {
@@ -333,6 +359,8 @@ async function main() {
     });
 
     console.log("Taxonomy seed completed successfully.");
+
+    await seedDefaultDepartmentsForOrganizations();
 
     await seedSuperAdmin();
 

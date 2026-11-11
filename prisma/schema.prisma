@@ -44,6 +44,14 @@ enum DocumentScanStatus {
   FAILED
 }
 
+enum EmployeePermissionType {
+  VIEW
+  DATA_ENTRY
+  FILE_UPLOAD
+  EDIT
+  DELETE
+}
+
 model Sector {
   id          String  @id @default(uuid())
   name        String  @unique
@@ -115,6 +123,7 @@ model Organization {
   users                User[]
   registrationRequests RegistrationRequest[]
   documents            OrganizationDocument[]
+  departments          Department[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -133,7 +142,7 @@ model User {
   firstName    String?
   lastName     String?
   email        String  @unique
-  passwordHash String
+  passwordHash String?
 
   role   UserRole   @default(ORG_MEMBER)
   status UserStatus @default(PENDING)
@@ -141,6 +150,15 @@ model User {
   // Null is allowed for SUPER_ADMIN accounts only.
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  permissions UserPermission[]
+  invitation  EmployeeInvitation?
+
+  deletedAt          DateTime?
+  deactivationReason String?
 
   submittedRegistrationRequests RegistrationRequest[] @relation("RegistrationSubmitter")
   reviewedRegistrationRequests  RegistrationRequest[] @relation("RegistrationReviewer")
@@ -153,8 +171,69 @@ model User {
   updatedAt   DateTime  @updatedAt
 
   @@index([organizationId])
+  @@index([departmentId])
   @@index([role])
   @@index([status])
+  @@index([deletedAt])
+}
+
+// ==========================================
+// Department
+// ==========================================
+
+model Department {
+  id             String @id @default(uuid())
+  name           String
+  organizationId String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  users     User[]
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive, sortOrder])
+}
+
+// ==========================================
+// User Permission
+// ==========================================
+
+model UserPermission {
+  id String @id @default(uuid())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  permission EmployeePermissionType
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, permission])
+  @@index([userId])
+}
+
+// ==========================================
+// Employee Invitation
+// ==========================================
+
+model EmployeeInvitation {
+  id String @id @default(uuid())
+
+  userId String @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 // ==========================================
