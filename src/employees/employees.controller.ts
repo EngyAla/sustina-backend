@@ -62,6 +62,18 @@ export class EmployeesController {
         );
     }
 
+    // POST /api/employees/:id/resend-invitation
+    @Post(':id/resend-invitation')
+    resendInvitation(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Req() req: AuthenticatedRequest,
+    ) {
+        return this.employeesService.resendInvitation(
+            id,
+            req.user.organizationId,
+        );
+    }
+
     // PATCH /api/employees/:id/deactivate
     @Patch(':id/deactivate')
     deactivate(

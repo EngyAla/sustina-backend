@@ -167,12 +167,6 @@ export class AuthService {
             }
         }
 
-        if (user.deletedAt) {
-            throw new UnauthorizedException(
-                'Invalid email or password',
-            );
-        }
-
         // 6. Generate access and refresh token
         const accessToken = await this.createAccessToken(user);
         const refreshToken = await this.createRefreshSession(user.id);

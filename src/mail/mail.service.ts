@@ -174,4 +174,109 @@ export class MailService {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
     }
+
+    async sendEmployeeInvitation(
+        email: string,
+        firstName: string,
+        lastName: string,
+        invitationToken: string,
+        ): Promise<void> {
+        const safeFirstName = this.escapeHtml(firstName);
+        const safeLastName = this.escapeHtml(lastName);
+
+        const invitationUrl = new URL(
+            this.configService.getOrThrow<string>(
+            'FRONTEND_EMPLOYEE_INVITATION_URL',
+            ),
+        );
+
+        invitationUrl.searchParams.set('token', invitationToken);
+
+        const url = invitationUrl.toString();
+
+        await this.transporter.sendMail({
+            from: this.from,
+            to: email,
+            subject: 'You are invited to join SUSTINA',
+            text: `
+        Hello ${firstName} ${lastName},
+
+        You have been invited to join SUSTINA.
+
+        Please use the following link to set up your account password:
+        ${url}
+
+        This invitation link expires in 24 hours.
+
+        If you were not expecting this invitation, you can ignore this email.
+
+        SUSTINA Team
+            `,
+            html: `
+            <!DOCTYPE html>
+            <html>
+            <body style="
+                font-family: Arial, sans-serif;
+                color: #263238;
+                max-width: 600px;
+                margin: auto;
+                padding: 24px;
+            ">
+                <h2>Welcome to SUSTINA!</h2>
+
+                <p>
+                Hello <strong>${safeFirstName} ${safeLastName}</strong>,
+                </p>
+
+                <p>
+                You have been invited to join your organization
+                on the SUSTINA platform.
+                </p>
+
+                <p>
+                To activate your account, click the button below
+                and create your password.
+                </p>
+
+                <div style="text-align: center; margin: 32px 0;">
+                <a
+                    href="${this.escapeHtml(url)}"
+                    style="
+                    background-color: #00796B;
+                    color: #ffffff;
+                    padding: 14px 28px;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    font-weight: bold;
+                    display: inline-block;
+                    "
+                >
+                    Accept Invitation
+                </a>
+                </div>
+
+                <p>
+                This invitation link expires in <strong>24 hours</strong>.
+                </p>
+
+                <p>
+                If the button doesn't work, copy and paste this link
+                into your browser:
+                </p>
+
+                <p style="word-break: break-all;">
+                <a href="${this.escapeHtml(url)}">${this.escapeHtml(url)}</a>
+                </p>
+
+                <p>
+                If you were not expecting this invitation,
+                you can safely ignore this email.
+                </p>
+
+                <p><strong>SUSTINA Team</strong></p>
+            </body>
+            </html>
+            `,
+        });
+    }
 }

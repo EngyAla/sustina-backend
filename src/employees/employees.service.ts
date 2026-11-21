@@ -1,11 +1,18 @@
+import { ConfigService } from '@nestjs/config';
 import {
     BadRequestException,
     ConflictException,
     Injectable,
     NotFoundException,
+    InternalServerErrorException,
 } from '@nestjs/common';
 
 import * as bcrypt from 'bcrypt';
+
+import {
+    createHash,
+    randomBytes,
+} from 'node:crypto';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -19,9 +26,17 @@ import { CreateEmployeeDto } from './dto/create-employee.dto.js';
 import { UpdateEmployeeDto } from './dto/update-employee.dto.js';
 import { QueryEmployeesDto } from './dto/query-employees.dto.js';
 
+import { MailService } from '../mail/mail.service.js';
+import { AcceptInvitationDto } from './dto/accept-invitation.dto.js';
+
+
 @Injectable()
 export class EmployeesService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly mailService: MailService,
+        private readonly configService: ConfigService,
+    ) {}
 
     // -----------------------------------------
     // Helpers
@@ -82,6 +97,20 @@ export class EmployeesService {
         }
 
         return employee;
+    }
+
+    private hashInvitationToken(token: string): string {
+        return createHash('sha256')
+            .update(token)
+            .digest('hex');
+    }
+
+    private generateInvitationToken(): string {
+        return randomBytes(32).toString('hex');
+    }
+
+    private getInvitationExpiration(): Date {
+        return new Date(Date.now() + 24 * 60 * 60 * 1000);
     }
 
     // -----------------------------------------
@@ -189,10 +218,12 @@ export class EmployeesService {
     async create(
         organizationId: string,
         dto: CreateEmployeeDto,
-    ) {
+        ) {
         const email = dto.email.trim().toLowerCase();
 
-        // Check email globally because User.email is globally unique.
+        const firstName = dto.firstName.trim();
+        const lastName = dto.lastName.trim();
+
         const existingUser = await this.prisma.user.findUnique({
             where: { email },
             select: { id: true },
@@ -200,79 +231,326 @@ export class EmployeesService {
 
         if (existingUser) {
             throw new ConflictException(
-                'This email is already registered',
+            'This email is already registered',
             );
         }
 
         await this.validateDepartment(
-        dto.departmentId,
-        organizationId,
+            dto.departmentId,
+            organizationId,
         );
 
+        const token = this.generateInvitationToken();
+        const tokenHash = this.hashInvitationToken(token);
+
+        const expiresAt = this.getInvitationExpiration();
+
         const employee = await this.prisma.$transaction(
-        async (tx) => {
+            async (tx) => {
             const user = await tx.user.create({
-            data: {
-                firstName: dto.firstName.trim(),
-                lastName: dto.lastName.trim(),
+                data: {
+                firstName,
+                lastName,
                 email,
                 organizationId,
                 departmentId: dto.departmentId,
                 role: UserRole.ORG_MEMBER,
                 status: UserStatus.PENDING,
                 passwordHash: null,
-            },
-            select: {
+                },
+                select: {
                 id: true,
                 email: true,
+                firstName: true,
+                lastName: true,
                 role: true,
                 status: true,
-                departmentId: true,
                 createdAt: true,
-            },
+                },
             });
 
             await tx.userPermission.createMany({
                 data: dto.permissions.map((permission) => ({
-                    userId: user.id,
-                    permission,
+                userId: user.id,
+                permission,
                 })),
             });
 
-            return tx.user.findUniqueOrThrow({
-            where: { id: user.id },
-            select: {
+            await tx.employeeInvitation.create({
+                data: {
+                userId: user.id,
+                tokenHash,
+                expiresAt,
+                },
+            });
+
+            const employeeDetails = await tx.user.findUniqueOrThrow({
+                where: { id: user.id },
+                select: {
                 id: true,
+                firstName: true,
+                lastName: true,
                 email: true,
                 role: true,
                 status: true,
                 createdAt: true,
                 department: {
-                select: {
+                    select: {
                     id: true,
                     name: true,
-                },
+                    },
                 },
                 permissions: {
-                select: {
+                    select: {
                     permission: true,
+                    },
                 },
+                },
+            });
+
+            return {
+                ...employeeDetails,
+                permissions: employeeDetails.permissions.map(
+                (item) => item.permission,
+                ),
+            };
+            },
+        );
+
+        // Send invitation after successful database transaction.
+        try {
+            await this.mailService.sendEmployeeInvitation(
+            email,
+            firstName,
+            lastName,
+            token,
+            );
+        } catch {
+            throw new InternalServerErrorException(
+            'Employee was created, but the invitation email could not be sent. Please resend the invitation.',
+            );
+        }
+
+        return {
+            message: 'Employee created and invitation email sent successfully',
+            employee,
+            invitation: {
+            expiresAt,
+            status: 'PENDING',
+            },
+        };
+    }
+
+    // -----------------------------------------
+    // Accept Invitation
+    // -----------------------------------------
+    async acceptInvitation(dto: AcceptInvitationDto) {
+        const tokenHash = this.hashInvitationToken(dto.token);
+
+        const invitation = await this.prisma.employeeInvitation.findUnique({
+            where: { tokenHash },
+            include: {
+                user: {
+                    include: {
+                        organization: true,
+                    },
                 },
             },
+        });
+
+        if (!invitation) {
+            throw new BadRequestException(
+                'Invitation is invalid or expired',
+            );
+        }
+
+        if (invitation.usedAt) {
+            throw new BadRequestException(
+                'This invitation has already been used',
+            );
+        }
+
+        if (invitation.expiresAt <= new Date()) {
+            throw new BadRequestException(
+                'Invitation has expired',
+            );
+        }
+
+        const user = invitation.user;
+
+        if (user.deletedAt) {
+            throw new BadRequestException(
+                'This employee account is no longer available',
+            );
+        }
+
+        if (user.role !== UserRole.ORG_MEMBER) {
+            throw new BadRequestException(
+                'Invalid employee invitation',
+            );
+        }
+
+        if (user.status !== UserStatus.PENDING) {
+            throw new BadRequestException(
+                'This account is not pending activation',
+            );
+        }
+
+        if (user.passwordHash) {
+            throw new ConflictException(
+                'Account setup has already been completed',
+            );
+        }
+
+        if (!user.organization || user.organization.status !== 'ACTIVE') {
+            throw new BadRequestException(
+                'The organization is not active',
+            );
+        }
+
+        const passwordHash = await bcrypt.hash(dto.password, 12);
+        const now = new Date();
+
+        await this.prisma.$transaction(async (tx) => {
+            // Re-check invitation inside transaction
+            const currentInvitation =
+                await tx.employeeInvitation.findUnique({
+                    where: { id: invitation.id },
+                });
+
+            if (
+                !currentInvitation ||
+                currentInvitation.usedAt ||
+                currentInvitation.expiresAt <= now
+            ) {
+                throw new BadRequestException(
+                    'Invitation is invalid or expired',
+                );
+            }
+
+            // Mark invitation as used
+            await tx.employeeInvitation.update({
+                where: { id: invitation.id },
+                data: { usedAt: now },
             });
-        },
+
+            // Set password and activate employee
+            await tx.user.update({
+                where: { id: user.id },
+                data: {
+                    passwordHash,
+                    status: UserStatus.ACTIVE,
+                },
+            });
+        });
+
+        return {
+            message: 'Invitation accepted successfully. You can now log in.',
+        };
+    }
+
+    // -----------------------------------------
+    // Resend Invitation
+    // -----------------------------------------
+    async resendInvitation(
+        employeeId: string,
+        organizationId: string,
+    ) {
+        const employee = await this.findEmployee(
+            employeeId,
+            organizationId,
+        );
+
+        if (employee.status !== UserStatus.PENDING) {
+            throw new BadRequestException(
+                'Invitation can only be sent to pending employees',
+            );
+        }
+
+        if (employee.passwordHash) {
+            throw new BadRequestException(
+                'Employee has already completed account setup',
+            );
+        }
+
+        const organization = await this.prisma.organization.findUnique({
+            where: { id: organizationId },
+            select: {
+                legalName: true,
+                status: true,
+            },
+        });
+
+        if (!organization || organization.status !== 'ACTIVE') {
+            throw new BadRequestException(
+                'Organization is not active',
+            );
+        }
+
+        const invitationUrlBase =
+            this.configService.getOrThrow<string>(
+                'FRONTEND_EMPLOYEE_INVITATION_URL',
+            );
+
+        const expirationHours = Number(
+            this.configService.get<string>(
+                'EMPLOYEE_INVITATION_EXPIRES_HOURS',
+                '48',
+            ),
+        );
+
+        if (
+            !Number.isInteger(expirationHours) ||
+            expirationHours < 1 ||
+            expirationHours > 168
+        ) {
+            throw new BadRequestException(
+                'Invalid invitation expiration configuration',
+            );
+        }
+
+        const rawToken = this.generateInvitationToken();
+        const tokenHash = this.hashInvitationToken(rawToken);
+
+        const expiresAt = new Date(
+            Date.now() + expirationHours * 60 * 60 * 1000,
+        );
+
+        await this.prisma.employeeInvitation.upsert({
+            where: {
+                userId: employeeId,
+            },
+            update: {
+                tokenHash,
+                expiresAt,
+                usedAt: null,
+            },
+            create: {
+                userId: employeeId,
+                tokenHash,
+                expiresAt,
+            },
+        });
+
+        const invitationUrl = new URL(
+            invitationUrlBase,
+        );
+
+        invitationUrl.searchParams.set('token', rawToken);
+
+        await this.mailService.sendEmployeeInvitation(
+            employee.email,
+            employee.firstName ?? 'Employee',
+            organization.legalName,
+            invitationUrl.toString(),
         );
 
         return {
-        message: 'Employee created successfully',
-        employee: {
-            ...employee,
-            permissions: employee.permissions.map(
-            (item) => item.permission,
-            ),
-        },
+            message: 'Invitation sent successfully',
         };
     }
+
+
 
     // -----------------------------------------
     // 3. Get Employee By ID
