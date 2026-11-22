@@ -13,6 +13,7 @@ import { AdminModule } from './admin/admin.module.js';
 import { MalwareScannerModule } from './malware-scanner/malware-scanner.module.js';
 import { DepartmentsModule } from './departments/departments.module.js';
 import { EmployeesModule } from './employees/employees.module.js';
+import { PermissionsModule } from './permissions/permissions.module.js';
 
 
 @Module({
@@ -30,6 +31,7 @@ import { EmployeesModule } from './employees/employees.module.js';
     MalwareScannerModule,
     DepartmentsModule,
     EmployeesModule,
+    PermissionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

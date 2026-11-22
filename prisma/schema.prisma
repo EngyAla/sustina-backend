@@ -125,6 +125,8 @@ model Organization {
   documents            OrganizationDocument[]
   departments          Department[]
 
+  permissions Permission[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -154,8 +156,9 @@ model User {
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: Restrict)
 
-  permissions UserPermission[]
-  invitation  EmployeeInvitation?
+  permissions           UserPermission[]
+  permissionAssignments EmployeePermissionAssignment[]
+  invitation            EmployeeInvitation?
 
   deletedAt          DateTime?
   deactivationReason String?
@@ -207,7 +210,7 @@ model UserPermission {
   id String @id @default(uuid())
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   permission EmployeePermissionType
 
@@ -218,6 +221,61 @@ model UserPermission {
 }
 
 // ==========================================
+// CUSTOM PERMISSIONS
+// ==========================================
+
+model Permission {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  operations PermissionOperation[]
+
+  assignedEmployees EmployeePermissionAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@index([organizationId, createdAt])
+}
+
+model PermissionOperation {
+  id String @id @default(uuid())
+
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  operation EmployeePermissionType
+
+  createdAt DateTime @default(now())
+
+  @@unique([permissionId, operation])
+  @@index([permissionId])
+}
+
+model EmployeePermissionAssignment {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+}
+
+// ==========================================
 // Employee Invitation
 // ==========================================
 
@@ -225,9 +283,9 @@ model EmployeeInvitation {
   id String @id @default(uuid())
 
   userId String @unique
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  tokenHash String @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
 
@@ -306,15 +364,15 @@ model OrganizationDocument {
 }
 
 model RefreshSession {
-  id        String   @id @default(uuid())
-  tokenHash String   @unique
+  id        String @id @default(uuid())
+  tokenHash String @unique
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
