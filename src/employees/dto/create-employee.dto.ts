@@ -33,6 +33,6 @@ export class CreateEmployeeDto {
     @IsArray()
     @ArrayNotEmpty()
     @ArrayUnique()
-    @IsEnum(EmployeePermissionType, { each: true })
-    permissions: EmployeePermissionType[];
+    @IsUUID('4', { each: true })
+    permissionIds: string[];
 }

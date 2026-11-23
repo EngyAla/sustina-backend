@@ -17,7 +17,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 
 import {
-    EmployeePermissionType,
     UserRole,
     UserStatus,
 } from '../generated/prisma/client.js';
@@ -71,25 +70,29 @@ export class EmployeesService {
         organizationId: string,
     ) {
         const employee = await this.prisma.user.findFirst({
-        where: {
-            id: employeeId,
-            organizationId,
-            role: UserRole.ORG_MEMBER,
-            deletedAt: null,
-        },
-        include: {
-            department: {
-            select: {
-                id: true,
-                name: true,
+            where: {
+                id: employeeId,
+                organizationId,
+                role: UserRole.ORG_MEMBER,
+                deletedAt: null,
             },
+            include: {
+                department: {
+                select: {
+                    id: true,
+                    name: true,
+                },
+                },
+                permissionAssignments: {
+                    include: {
+                        permission: {
+                            include: {
+                                operations: true,
+                            },
+                        },
+                    },
+                },
             },
-            permissions: {
-            select: {
-                permission: true,
-            },
-            },
-        },
         });
 
         if (!employee) {
@@ -184,11 +187,23 @@ export class EmployeesService {
                     name: true,
                     },
                 },
-                permissions: {
-                    select: {
-                    permission: true,
+                permissionAssignments: {
+                select: {
+                    permission: {
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                            isActive: true,
+                            operations: {
+                                select: {
+                                    operation: true,
+                                },
+                            },
+                        },
                     },
                 },
+            },
             },
         }),
 
@@ -198,11 +213,16 @@ export class EmployeesService {
         return {
         employees: employees.map((employee) => ({
             ...employee,
-            permissions: employee.permissions.map(
-            (item) => item.permission,
+            permissions: employee.permissionAssignments.map(
+                (assignment) => ({
+                    ...assignment.permission,
+                    operations: assignment.permission.operations.map(
+                        (item) => item.operation,
+                    ),
+                }),
             ),
+            permissionAssignments: undefined,
         })),
-
         pagination: {
             total,
             page,
@@ -247,6 +267,26 @@ export class EmployeesService {
 
         const employee = await this.prisma.$transaction(
             async (tx) => {
+            // 1. Validate permissions belong to this organization
+            const validPermissions = await tx.permission.findMany({
+                where: {
+                    id: {
+                        in: dto.permissionIds,
+                    },
+                    organizationId,
+                    isActive: true,
+                },
+                select: {
+                    id: true,
+                },
+            });
+
+            if (validPermissions.length !== dto.permissionIds.length) {
+                throw new BadRequestException(
+                    'One or more permissions do not exist, are inactive, or do not belong to this organization',
+                );
+            }
+            // 2. Create employee
             const user = await tx.user.create({
                 data: {
                 firstName,
@@ -269,13 +309,15 @@ export class EmployeesService {
                 },
             });
 
-            await tx.userPermission.createMany({
-                data: dto.permissions.map((permission) => ({
-                userId: user.id,
-                permission,
+            // 3. Assign custom permissions
+            await tx.employeePermissionAssignment.createMany({
+                data: dto.permissionIds.map((permissionId) => ({
+                    userId: user.id,
+                    permissionId,
                 })),
             });
 
+            // 4. Create invitation
             await tx.employeeInvitation.create({
                 data: {
                 userId: user.id,
@@ -300,19 +342,36 @@ export class EmployeesService {
                     name: true,
                     },
                 },
-                permissions: {
-                    select: {
-                    permission: true,
+                permissionAssignments: {
+                        select: {
+                            permission: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    description: true,
+                                    isActive: true,
+                                    operations: {
+                                        select: {
+                                            operation: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
-                },
             });
-
             return {
                 ...employeeDetails,
-                permissions: employeeDetails.permissions.map(
-                (item) => item.permission,
+                permissions: employeeDetails.permissionAssignments.map(
+                    (assignment) => ({
+                        ...assignment.permission,
+                        operations: assignment.permission.operations.map(
+                            (item) => item.operation,
+                        ),
+                    }),
                 ),
+                permissionAssignments: undefined,
             };
             },
         );
@@ -565,21 +624,31 @@ export class EmployeesService {
         );
 
         return {
-        employee: {
-            id: employee.id,
-            firstName: employee.firstName,
-            lastName: employee.lastName,
-            email: employee.email,
-            role: employee.role,
-            status: employee.status,
-            department: employee.department,
-            permissions: employee.permissions.map(
-            (item) => item.permission,
-            ),
-            lastLoginAt: employee.lastLoginAt,
-            createdAt: employee.createdAt,
-            updatedAt: employee.updatedAt,
-        },
+            employee: {
+                id: employee.id,
+                firstName: employee.firstName,
+                lastName: employee.lastName,
+                email: employee.email,
+                role: employee.role,
+                status: employee.status,
+                department: employee.department,
+
+                permissions: employee.permissionAssignments.map(
+                    (assignment) => ({
+                        id: assignment.permission.id,
+                        name: assignment.permission.name,
+                        description: assignment.permission.description,
+                        isActive: assignment.permission.isActive,
+                        operations: assignment.permission.operations.map(
+                            (item) => item.operation,
+                        ),
+                    }),
+                ),
+
+                lastLoginAt: employee.lastLoginAt,
+                createdAt: employee.createdAt,
+                updatedAt: employee.updatedAt,
+            },
         };
     }
 
@@ -594,100 +663,160 @@ export class EmployeesService {
         await this.findEmployee(employeeId, organizationId);
 
         if (dto.departmentId) {
-        await this.validateDepartment(
-            dto.departmentId,
-            organizationId,
-        );
+            await this.validateDepartment(
+                dto.departmentId,
+                organizationId,
+            );
         }
 
         const passwordHash = dto.password
-        ? await bcrypt.hash(dto.password, 12)
-        : undefined;
+            ? await bcrypt.hash(dto.password, 12)
+            : undefined;
 
         const employee = await this.prisma.$transaction(
-        async (tx) => {
-            const user = await tx.user.update({
-            where: {
-                id: employeeId,
-            },
-            data: {
-                ...(dto.firstName !== undefined && {
-                firstName: dto.firstName.trim(),
-                }),
+            async (tx) => {
+                // 1. Validate new permissions if provided
+                if (dto.permissionIds !== undefined) {
+                    if (dto.permissionIds.length > 0) {
+                        const validPermissions =
+                            await tx.permission.findMany({
+                                where: {
+                                    id: {
+                                        in: dto.permissionIds,
+                                    },
+                                    organizationId,
+                                    isActive: true,
+                                },
+                                select: {
+                                    id: true,
+                                },
+                            });
 
-                ...(dto.lastName !== undefined && {
-                lastName: dto.lastName.trim(),
-                }),
+                        if (
+                            validPermissions.length !==
+                            dto.permissionIds.length
+                        ) {
+                            throw new BadRequestException(
+                                'One or more permissions do not exist, are inactive, or do not belong to this organization',
+                            );
+                        }
+                    }
 
-                ...(dto.departmentId && {
-                departmentId: dto.departmentId,
-                }),
+                    // 2. Remove current assignments
+                    await tx.employeePermissionAssignment.deleteMany({
+                        where: {
+                            userId: employeeId,
+                        },
+                    });
 
-                ...(passwordHash && {
-                passwordHash,
-                }),
-            },
-            select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                status: true,
-                department: {
-                select: {
-                    id: true,
-                    name: true,
-                },
-                },
-                updatedAt: true,
-            },
-            });
+                    // 3. Create new assignments
+                    if (dto.permissionIds.length > 0) {
+                        await tx.employeePermissionAssignment.createMany({
+                            data: dto.permissionIds.map((permissionId) => ({
+                                userId: employeeId,
+                                permissionId,
+                            })),
+                        });
+                    }
+                }
 
-            if (dto.permissions !== undefined) {
-            await tx.userPermission.deleteMany({
-                where: { userId: employeeId },
-            });
+                // 4. Update employee information
+                const user = await tx.user.update({
+                    where: {
+                        id: employeeId,
+                    },
+                    data: {
+                        ...(dto.firstName !== undefined && {
+                            firstName: dto.firstName.trim(),
+                        }),
 
-            if (dto.permissions.length > 0) {
-                await tx.userPermission.createMany({
-                data: dto.permissions.map((permission) => ({
-                    userId: employeeId,
-                    permission,
-                })),
+                        ...(dto.lastName !== undefined && {
+                            lastName: dto.lastName.trim(),
+                        }),
+
+                        ...(dto.departmentId && {
+                            departmentId: dto.departmentId,
+                        }),
+
+                        ...(passwordHash && {
+                            passwordHash,
+                        }),
+                    },
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        status: true,
+                        department: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                        updatedAt: true,
+                    },
                 });
-            }
-            }
 
-            // Password changes invalidate existing sessions.
-            if (passwordHash) {
-            await tx.refreshSession.updateMany({
-                where: {
-                userId: employeeId,
-                revokedAt: null,
-                },
-                data: {
-                revokedAt: new Date(),
-                },
-            });
-            }
+                // 5. Invalidate existing sessions if password changed
+                if (passwordHash) {
+                    await tx.refreshSession.updateMany({
+                        where: {
+                            userId: employeeId,
+                            revokedAt: null,
+                        },
+                        data: {
+                            revokedAt: new Date(),
+                        },
+                    });
+                }
 
-            const permissions = await tx.userPermission.findMany({
-            where: { userId: employeeId },
-            select: { permission: true },
-            });
+                // 6. Return updated employee with custom permissions
+                const updatedEmployee =
+                    await tx.user.findUniqueOrThrow({
+                        where: {
+                            id: employeeId,
+                        },
+                        select: {
+                            permissionAssignments: {
+                                select: {
+                                    permission: {
+                                        select: {
+                                            id: true,
+                                            name: true,
+                                            description: true,
+                                            isActive: true,
+                                            operations: {
+                                                select: {
+                                                    operation: true,
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    });
 
-            return {
-            ...user,
-            permissions: permissions.map(
-                (item) => item.permission,
-            ),
-            };
-        },
+                return {
+                    ...user,
+                    permissions:
+                        updatedEmployee.permissionAssignments.map(
+                            (assignment) => ({
+                                ...assignment.permission,
+                                operations:
+                                    assignment.permission.operations.map(
+                                        (item) => item.operation,
+                                    ),
+                            }),
+                        ),
+                };
+            },
         );
 
         return {
-        message: 'Employee updated successfully',
-        employee,
+            message: 'Employee updated successfully',
+            employee,
         };
     }
 

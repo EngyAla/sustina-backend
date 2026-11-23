@@ -14,6 +14,7 @@ import { MalwareScannerModule } from './malware-scanner/malware-scanner.module.j
 import { DepartmentsModule } from './departments/departments.module.js';
 import { EmployeesModule } from './employees/employees.module.js';
 import { PermissionsModule } from './permissions/permissions.module.js';
+import { CommonModule } from './common/common.module.js';
 
 
 @Module({
@@ -22,6 +23,7 @@ import { PermissionsModule } from './permissions/permissions.module.js';
       isGlobal: true,
     }),
     PrismaModule,
+    CommonModule,
     SectorsModule,
     OrganizationsModule,
     DocumentsModule,

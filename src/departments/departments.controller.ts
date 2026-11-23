@@ -8,7 +8,15 @@ import {
 import type { Request } from 'express';
 
 import { DepartmentsService } from './departments.service.js';
+
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { PermissionsGuard } from '../common/guards/permissions.guard.js';
+
+import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
+
+import {
+    EmployeePermissionType,
+} from '../generated/prisma/enums.js';
 
 interface AuthenticatedRequest extends Request {
     user: {
@@ -20,13 +28,14 @@ interface AuthenticatedRequest extends Request {
 }
 
 @Controller('departments')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class DepartmentsController {
     constructor(
         private readonly departmentsService: DepartmentsService,
     ) {}
 
     @Get()
+    @RequirePermission(EmployeePermissionType.VIEW)
     async findMyDepartments(
         @Req() req: AuthenticatedRequest,
     ) {

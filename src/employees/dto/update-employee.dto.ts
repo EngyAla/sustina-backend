@@ -30,8 +30,8 @@ export class UpdateEmployeeDto {
     @IsOptional()
     @IsArray()
     @ArrayUnique()
-    @IsEnum(EmployeePermissionType, { each: true })
-    permissions?: EmployeePermissionType[];
+    @IsUUID('4', { each: true })
+    permissionIds?: string[];
 
     @IsOptional()
     @IsString()
