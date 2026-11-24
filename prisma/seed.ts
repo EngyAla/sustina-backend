@@ -5,7 +5,10 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 import { Pool } from "pg";
 
 import bcrypt from "bcrypt";
+
 import { DEFAULT_DEPARTMENTS } from "../src/departments/default-departments.js";
+import { seedDataItemsForOrganization } from "../src/data-items/data-items.seed.js";
+
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -221,11 +224,12 @@ async function seedSuperAdmin() {
     console.log("Super Admin created successfully.");
 }
 
+
 async function seedDefaultDepartmentsForOrganizations() {
     const organizations = await prisma.organization.findMany({
         select: {
-        id: true,
-        legalName: true,
+            id: true,
+            legalName: true,
         },
     });
 
@@ -239,13 +243,21 @@ async function seedDefaultDepartmentsForOrganizations() {
             skipDuplicates: true,
         });
 
+        const result = await seedDataItemsForOrganization(
+            prisma,
+            organization.id,
+        );
+
         console.log(
-            `Default departments seeded for: ${organization.legalName}`,
+            `Departments and ${result.total} KPI Data Items seeded for: ${organization.legalName}`,
         );
     }
 
-    console.log('Default departments seeding completed successfully.');
+    console.log(
+        'Default departments and KPI catalog seeding completed successfully.',
+    );
 }
+
 
 async function main() {
     const activeSectorNames = taxonomy.map((item) => item.name);

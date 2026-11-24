@@ -15,6 +15,8 @@ import { DepartmentsModule } from './departments/departments.module.js';
 import { EmployeesModule } from './employees/employees.module.js';
 import { PermissionsModule } from './permissions/permissions.module.js';
 import { CommonModule } from './common/common.module.js';
+import { DataEntriesModule } from './data-entries/data-entries.module.js';
+import { DataManagementModule } from './data-management/data-management.module.js';
 
 
 @Module({
@@ -34,6 +36,8 @@ import { CommonModule } from './common/common.module.js';
     DepartmentsModule,
     EmployeesModule,
     PermissionsModule,
+    DataEntriesModule,
+    DataManagementModule
   ],
   controllers: [AppController],
   providers: [AppService],

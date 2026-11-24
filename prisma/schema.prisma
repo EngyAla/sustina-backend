@@ -52,6 +52,28 @@ enum EmployeePermissionType {
   DELETE
 }
 
+enum ESGCategory {
+  ENVIRONMENTAL
+  SOCIAL
+  GOVERNANCE
+}
+
+enum DataFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum DataEntryStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum SupportingDocumentType {
+  EVIDENCE
+  OTHER
+}
+
 model Sector {
   id          String  @id @default(uuid())
   name        String  @unique
@@ -123,7 +145,12 @@ model Organization {
   users                User[]
   registrationRequests RegistrationRequest[]
   documents            OrganizationDocument[]
-  departments          Department[]
+
+  departments Department[]
+  dataItems   DataItem[]
+
+  dataEntries         DataEntry[]
+  supportingDocuments SupportingDocument[]
 
   permissions Permission[]
 
@@ -166,6 +193,11 @@ model User {
   submittedRegistrationRequests RegistrationRequest[] @relation("RegistrationSubmitter")
   reviewedRegistrationRequests  RegistrationRequest[] @relation("RegistrationReviewer")
 
+  dataEntriesCreated   DataEntry[] @relation("DataEntryCreator")
+  dataEntriesCollected DataEntry[] @relation("DataEntryCollector")
+
+  uploadedDataDocuments SupportingDocument[] @relation("DataDocumentUploader")
+
   refreshSessions   RefreshSession[]
   passwordResetOtps PasswordResetOtp[]
 
@@ -194,6 +226,10 @@ model Department {
   users     User[]
   isActive  Boolean @default(true)
   sortOrder Int     @default(0)
+
+  dataItems DataItem[]
+
+  dataEntries DataEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -359,6 +395,116 @@ model OrganizationDocument {
 
   @@index([organizationId])
   @@index([registrationRequestId])
+  @@index([sha256])
+  @@index([scanStatus])
+}
+
+// ==========================================
+// ESG DATA ITEM / KPI CATALOG
+// ==========================================
+
+model DataItem {
+  id          String        @id @default(uuid())
+  code        String
+  name        String
+  description String?
+  category    ESGCategory
+  unit        String
+  frequency   DataFrequency
+  isActive    Boolean       @default(true)
+  sortOrder   Int           @default(0)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  dataEntries DataEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, departmentId, isActive])
+  @@index([organizationId, category, isActive])
+  @@index([organizationId, frequency, isActive])
+}
+
+model DataEntry {
+  id String @id @default(uuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+
+  dataItemId String
+  dataItem   DataItem @relation(fields: [dataItemId], references: [id], onDelete: Restrict)
+
+  // Reporting period
+  periodKey   String
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // KPI value
+  value Decimal @db.Decimal(20, 6)
+  notes String?
+
+  status DataEntryStatus @default(DRAFT)
+
+  // Person who entered the data
+  enteredById String
+  enteredBy   User   @relation("DataEntryCreator", fields: [enteredById], references: [id], onDelete: Restrict)
+
+  // Person accountable for collecting the data
+  dataCollectorId String
+  dataCollector   User   @relation("DataEntryCollector", fields: [dataCollectorId], references: [id], onDelete: Restrict)
+
+  supportingDocuments SupportingDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One entry per KPI per organization per reporting period
+  @@unique([organizationId, dataItemId, periodKey])
+  @@index([organizationId, departmentId, periodStart])
+  @@index([organizationId, status])
+  @@index([dataItemId, periodKey])
+  @@index([enteredById])
+  @@index([dataCollectorId])
+}
+
+model SupportingDocument {
+  id String @id @default(uuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  dataEntryId String
+  dataEntry   DataEntry @relation(fields: [dataEntryId], references: [id], onDelete: Cascade)
+
+  uploadedById String
+  uploadedBy   User   @relation("DataDocumentUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  documentType SupportingDocumentType @default(EVIDENCE)
+
+  originalFileName String
+  mimeType         String
+  sizeBytes        Int
+
+  cloudinaryPublicId String @unique
+  secureUrl          String
+
+  sha256     String
+  scanStatus DocumentScanStatus @default(CLEAN)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, dataEntryId])
+  @@index([uploadedById])
   @@index([sha256])
   @@index([scanStatus])
 }

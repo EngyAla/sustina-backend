@@ -12,6 +12,8 @@ import { DocumentsService } from '../documents/documents.service.js';
 
 import { RegisterOrganizationDto } from './dto/register-organization.dto.js';
 import { DEFAULT_DEPARTMENTS } from '../departments/default-departments.js';
+import { seedDataItemsForOrganization } from '../data-items/data-items.seed.js';
+
 
 @Injectable()
 export class RegistrationService {
@@ -161,6 +163,12 @@ export class RegistrationService {
                     sortOrder: index + 1,
                 })),
             });
+
+            // Seed the ESG KPI catalog for the new organization.
+            await seedDataItemsForOrganization(
+                tx,
+                organization.id,
+            );
 
             return {
             organization,
